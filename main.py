@@ -2,15 +2,22 @@ import io
 import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse  
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 app = FastAPI()
 
-model = joblib.load("E:\House_prediction_API\house_model.joblib")
-features = joblib.load("E:\House_prediction_API\house_features.joblib")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # After testing, replace * with your GitHub Pages URL
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# input schema
+model = joblib.load("house_model.joblib")
+features = joblib.load("house_features.joblib")
+
 class HouseFeatures(BaseModel):
     MedInc: float = Field(gt=0, description="Median Income of Neighbourhood")
     HouseAge: float = Field(gt=0, description="Average age of house")
@@ -21,7 +28,6 @@ class HouseFeatures(BaseModel):
     Latitude: float = Field(ge=32, le=42, description="Latitude")
     Longitude: float = Field(ge=-124, le=-114, description="Longitude")
 
-# home
 @app.get("/")
 def home():
     return {
@@ -39,7 +45,6 @@ def health():
         "avg_error": "$38,000"
     }
 
-# prediction
 @app.post("/predict")
 def predict(house: HouseFeatures):
     try:
@@ -64,64 +69,42 @@ def predict(house: HouseFeatures):
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Prediction failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 @app.post("/predict-file")
 async def predict_file(file: UploadFile = File(...)):
-
-    if not file.filename.endswith(".csv"):  # 
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a CSV file only"
-        )
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file only")
 
     contents = await file.read()
-
-    df = pd.read_csv(io.BytesIO(contents))  #  read_csv
+    df = pd.read_csv(io.BytesIO(contents))
 
     required_columns = [
         "MedInc", "HouseAge", "AveRooms", "AveBedrms",
         "Population", "AveOccup", "Latitude", "Longitude"
     ]
 
-    missing_columns = [
-        col for col in required_columns
-        if col not in df.columns
-    ]
+    missing_columns = [col for col in required_columns if col not in df.columns]
 
     if missing_columns:
-        raise HTTPException(
-            status_code=400,
-            detail=f"These columns are missing from your file: {missing_columns}" 
-        )
+        raise HTTPException(status_code=400, detail=f"These columns are missing from your file: {missing_columns}")
 
     if len(df) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file has no data rows"
-        )
+        raise HTTPException(status_code=400, detail="The uploaded file has no data rows")
 
     try:
         predictions = model.predict(df[required_columns])
-
-        df["predicted_price_usd"] = predictions * 100000  
+        df["predicted_price_usd"] = predictions * 100000
         df["predicted_price_usd"] = df["predicted_price_usd"].apply(lambda x: f"${x:,.0f}")
 
         outframe = df.to_csv(index=False)
 
-        return StreamingResponse( 
-            io.StringIO(outframe),  
+        return StreamingResponse(
+            io.StringIO(outframe),
             media_type="text/csv",
-            headers={
-                "Content-Disposition": "attachment; filename=predictions.csv"  
-            }
+            headers={"Content-Disposition": "attachment; filename=predictions.csv"}
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Prediction failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+

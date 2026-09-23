@@ -1,5 +1,5 @@
 // ─── CHANGE THIS to your Render URL after deploying the backend ───
-const API_BASE = "https://your-app-name.onrender.com";
+const API_BASE = "https://fastapi-project-house-prediction-api.onrender.com";
 // ─────────────────────────────────────────────────────────────────
 
 async function predict() {
